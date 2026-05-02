@@ -7,7 +7,9 @@
 #include "utils/flags/flagtypes.h"
 
 #include <iostream>
+#include <fstream>
 #include <locale>
+#include <zypp-core/fs/TmpPath.h>
 #include <zypp/Capability.h>
 #include <zypp/PoolQueryResult.h>
 #include <zypp/base/Algorithm.h>
@@ -25,6 +27,8 @@
 /// END Imports.
 
 #include <unordered_map>
+#include <zlib.h>
+
 
 namespace zypp {
 namespace ZyppFlags {
@@ -151,9 +155,51 @@ static std::string getFileListsUrl(const zypp::Pathname &repomdPath) {
 /// ISSUE #633 FEATURE REQUEST: HELPER FUNCTION TO READ XML DOCUMENT USING
 /// libxml2
 
-static void extractPackageFiles(const zypp::Pathname &filelistPath,
+static void extractPackageFiles(const zypp::Pathname &filelistPath1,
                                 const std::string &targetName,
                                 const std::string &targetArch) {
+  // check if gzip file
+  std::string filelistPath = filelistPath1.c_str();
+  zypp::filesystem::TmpFile tmpfile;
+  {
+    // open file
+    std::ifstream file(filelistPath, std::ios::binary);
+    if (!file) {
+      std::cerr << "BUG: File " << filelistPath << " not found or unaccessible (contact developers).\n";
+      return;
+    };
+    // check for gzip magic bytes
+    uint8_t b1 = 0, b2 = 0;
+    file.read(reinterpret_cast<char*>(&b1), 1);
+    file.read(reinterpret_cast<char*>(&b2), 1);
+    file.close();
+    // if there bytes detected, then unpack gzip to temporary file
+    if (file && b1 == 0x1F && b2 == 0x8B){
+      gzFile gz = gzopen(filelistPath.c_str(), "rb");
+      if (!gz) {
+        std::cerr << "Failed to open gzip file\n";
+        return;
+      }
+      filelistPath = tmpfile.path().c_str();
+      std::ofstream out(filelistPath, std::ios::binary);
+      if (!out) {
+        gzclose(gz);
+        std::cerr << "Failed to create temp file\n";
+        return;
+      }
+
+      char buffer[8192];
+      int bytesRead;
+
+      while ((bytesRead = gzread(gz, buffer, sizeof(buffer))) > 0) {
+        out.write(buffer, bytesRead);
+      }
+
+      gzclose(gz);
+      out.close();
+    };
+  }
+  
   xmlTextReaderPtr reader = xmlReaderForFile(filelistPath.c_str(), nullptr, 0);
   if (!reader) {
     std::cerr << "Failed to parse downloaded filelists archive.\n";

@@ -34,6 +34,11 @@ BuildRequires:  gettext-devel >= 0.15
 BuildRequires:  libzypp-devel >= 17.37.12
 BuildRequires:  readline-devel >= 5.1
 BuildRequires:  libxml2-devel
+%if 0%{?suse_version} > 1599
+BuildRequires:  zlib-ng-compat-devel
+%else
+BuildRequires:  zlib-devel
+%endif
 
 # required for documentation
 BuildRequires:  rubygem(asciidoctor)
